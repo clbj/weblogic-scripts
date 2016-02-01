@@ -1,2 +1,2 @@
 # weblogic-scripts
-Oracle Weblogic 12c > useful scripts
+Oracle Weblogic 12c+ useful scripts
