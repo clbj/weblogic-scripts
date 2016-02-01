@@ -2,6 +2,7 @@
 
 # CLBJ - 2016- Shell script to check and kill weblogic processes
 # Dependency: curl (ex: yum install curl, apt-get install curl)
+# https://github.com/clbj/weblogic-scripts
 # $1 weblogic install path
 # $2 domain name
 # $3 init node manager process
