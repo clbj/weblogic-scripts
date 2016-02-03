@@ -205,11 +205,6 @@ startAdminServer() {
 	  time_spent=$(( time_spent + ${SLEEP_TIME} ))
 	  echo "Time spent so far to start process: ${time_spent} seconds"
 	  PID_ADMIN_SERVER=$(ps -ef | grep "weblogic.Name=AdminServer -Djava.security.policy=${WL_INSTALL_PATH}" | grep -v grep|awk '{print $2}')
-
-		if ( time_spent > ${LONG_TIME} ); then
-			echo "WARNING: Operation is taking too much to finish. Check Node Manager port parameter value."
-			echo "Check Node Manager port parameter value."
-		fi
 	done
 
 	while ([ "${NETSTAT_ADMIN_SERVER}" = "" ]); do
