@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # CLBJ - 2016- Shell script to check and kill weblogic processes
-# Dependency: curl (ex: yum install curl, apt-get install curl)ps
+# Dependency: netstat
 # https://github.com/clbj/weblogic-scripts
 # $1 weblogic install path
 # $2 domain name
@@ -20,6 +20,8 @@ if ([ "$1" = "" ] || [ "$2" = "" ] || [ "$3" = "" ] || [ "$4" = "" ] || [ "$5" =
 	exit
 fi
 
+SLEEP_TIME=3
+LONG_TIME=240
 WL_INSTALL_PATH=${1}
 WL_DOMAIN_NAME=${2}
 NODE_MANAGER_PORT=${3}
@@ -29,10 +31,8 @@ ADMIN_SERVER_MODE=$(echo ${6} | tr '[:lower:]' '[:upper:]')
 PID_ADMIN_SERVER=$(ps -ef | grep "weblogic.Name=AdminServer -Djava.security.policy=${WL_INSTALL_PATH}" | grep -v grep|awk '{print $2}')
 PID_NODE_MANAGER=$(ps -ef  | grep "weblogic.NodeManager" | grep -v grep | awk '{print $2}')
 PID_MANAGED_SERVER=$(ps -ef  | grep "wlserver/server -Dweblogic.management.server" | grep -v grep | awk '{print $2}')
-SLEEP_TIME=3
 OVERALL_STOP_STATUS=true
 OVERALL_START_STATUS=true
-WL_HTTP_STATUS_CODE=$(curl -I http://127.0.0.1:"$ADMIN_SERVER_PORT"/console/login/LoginForm.jsp 2>/dev/null | head -n 1 | cut -d$' ' -f2)
 NETSTAT_ADMIN_SERVER=$(netstat -ln | grep :"$ADMIN_SERVER_PORT" | grep 'LISTEN')
 NETSTAT_NODE_MANAGER=$(netstat -ln | grep :"$NODE_MANAGER_PORT" | grep 'LISTEN')
 
@@ -46,7 +46,7 @@ stopNodeManager() {
 
     . /${WL_INSTALL_PATH}/user_projects/domains/${WL_DOMAIN_NAME}/bin/stopNodeManager.sh < /dev/null &> /dev/null &
 
-    until [[ "${PID_NODE_MANAGER}" = "" ]]; do
+    until ([ "${PID_NODE_MANAGER}" = "" ]); do
       echo "Still stopping Weblogic Node Manager process ..."
       sleep ${SLEEP_TIME}
       time_spent=$(( time_spent + ${SLEEP_TIME} ))
@@ -86,7 +86,7 @@ startNodeManager() {
 
   . /${WL_INSTALL_PATH}/user_projects/domains/${WL_DOMAIN_NAME}/bin/startNodeManager.sh < /dev/null &> /dev/null &
 
-  while [[ "${PID_NODE_MANAGER}" = "" ]]; do
+  while ([ "${PID_NODE_MANAGER}" = "" ]); do
     echo "Still starting Weblogic Node Manager process in background ..."
     sleep ${SLEEP_TIME}
     time_spent=$(( time_spent + ${SLEEP_TIME} ))
@@ -94,7 +94,7 @@ startNodeManager() {
     PID_NODE_MANAGER=$(ps -ef  | grep "weblogic.NodeManager" | grep -v grep | awk '{print $2}')
   done
 
-	while [[ "${NETSTAT_NODE_MANAGER}" = "" ]]; do
+	while ([ "${NETSTAT_NODE_MANAGER}" = "" ]); do
 		echo "Wating for Weblogic Node Manager service to be avaliable ..."
 		local netstat_node_manager_5556=$(netstat -ln | grep ':5556' | grep 'LISTEN')
 		local netstat_node_manager_12556=$(netstat -ln | grep ':12556' | grep 'LISTEN')
@@ -130,7 +130,7 @@ stopManagedServer() {
     echo "---------------------------------------------------------------------"
     kill -9 "${PID_MANAGED_SERVER}"
 
-    until [[ "${PID_MANAGED_SERVER}" = "" ]]; do
+    until ([ "${PID_MANAGED_SERVER}" = "" ]); do
       echo "Still stopping Weblogic Managed Server process ..."
       sleep ${SLEEP_TIME}
       time_spent=$(( time_spent + ${SLEEP_TIME} ))
@@ -159,7 +159,7 @@ stopAdminServer() {
     echo "---------------------------------------------------------------------"
     . /${WL_INSTALL_PATH}/user_projects/domains/${WL_DOMAIN_NAME}/bin/stopWebLogic.sh < /dev/null &> /dev/null &
 
-    until [[ "${PID_ADMIN_SERVER}" = "" ]]; do
+    until ([ "${PID_ADMIN_SERVER}" = "" ]); do
       echo "Stopping Weblogic Admin Server process ..."
       sleep ${SLEEP_TIME}
       time_spent=$(( time_spent + ${SLEEP_TIME} ))
@@ -199,17 +199,20 @@ startAdminServer() {
 
   . /${WL_INSTALL_PATH}/user_projects/domains/${WL_DOMAIN_NAME}/startWebLogic.sh < /dev/null &> /dev/null &
 
-	if ! ([ "${WL_HTTP_STATUS_CODE}" = "200" ]); then
-		while ([ "${PID_ADMIN_SERVER}" = "" ]); do
-	    echo "Still starting Weblogic Admin Server process in background ..."
-	    sleep ${SLEEP_TIME}
-	    time_spent=$(( time_spent + ${SLEEP_TIME} ))
-	    echo "Time spent so far to start process: ${time_spent} seconds"
-	    PID_ADMIN_SERVER=$(ps -ef | grep "weblogic.Name=AdminServer -Djava.security.policy=${WL_INSTALL_PATH}" | grep -v grep|awk '{print $2}')
-	  done
-	fi
+	while ([ "${PID_ADMIN_SERVER}" = "" ]); do
+	  echo "Still starting Weblogic Admin Server process in background ..."
+	  sleep ${SLEEP_TIME}
+	  time_spent=$(( time_spent + ${SLEEP_TIME} ))
+	  echo "Time spent so far to start process: ${time_spent} seconds"
+	  PID_ADMIN_SERVER=$(ps -ef | grep "weblogic.Name=AdminServer -Djava.security.policy=${WL_INSTALL_PATH}" | grep -v grep|awk '{print $2}')
 
-	while [[ "${NETSTAT_ADMIN_SERVER}" = "" ]]; do
+		if ( time_spent > ${LONG_TIME} ); then
+			echo "WARNING: Operation is taking too much to finish. Check Node Manager port parameter value."
+			echo "Check Node Manager port parameter value."
+		fi
+	done
+
+	while ([ "${NETSTAT_ADMIN_SERVER}" = "" ]); do
 		echo "Waiting for Weblogic Admin Server service to be avaliable ..."
 		local netstat_admin_server_7001=$(netstat -ln | grep ':7001' | grep 'LISTEN')
 
@@ -223,14 +226,6 @@ startAdminServer() {
 		time_spent=$(( time_spent + ${SLEEP_TIME} ))
 		echo "Time spent so far to start process: ${time_spent} seconds"
 	done
-
-  while ! ([ "${WL_HTTP_STATUS_CODE}" = "200" ]); do
-    echo "Waiting for Weblogic Admin Server console to be ready ..."
-    sleep ${SLEEP_TIME}
-    time_spent=$(( time_spent + ${SLEEP_TIME} ))
-    echo "Time spent so far to start process: ${time_spent} seconds"
-    WL_HTTP_STATUS_CODE=$(curl -I http://127.0.0.1:"$ADMIN_SERVER_PORT"/console/login/LoginForm.jsp 2>/dev/null | head -n 1 | cut -d$' ' -f2)
-  done
 
   echo "-----------------------------------------------------------------------"
   echo "Weblogic Admin Server process started successfully with PID ${PID_ADMIN_SERVER}"
