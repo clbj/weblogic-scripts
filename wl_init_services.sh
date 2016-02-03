@@ -1,34 +1,42 @@
 #!/bin/sh
 
 # CLBJ - 2016- Shell script to check and kill weblogic processes
-# Dependency: curl (ex: yum install curl, apt-get install curl)
+# Dependency: curl (ex: yum install curl, apt-get install curl)ps
 # https://github.com/clbj/weblogic-scripts
 # $1 weblogic install path
 # $2 domain name
-# $3 init node manager process
-# $4 init admin server process
+# $3 Weblogic Node Manager port ex: 5556
+# $4 init mode for Node Manager (STOP|START|RESTART|NONE)
+# $5 Weblogic Admin server port ex: 7001
+# $6 init mode for Admin Server (STOP|START|RESTART|NONE)
 
-if ([ "$1" = "" ] || [ "$2" = "" ] || [ "$3" = "" ] || [ "$4" = "" ]); then
-	echo "--------------------------------------"
+if ([ "$1" = "" ] || [ "$2" = "" ] || [ "$3" = "" ] || [ "$4" = "" ] || [ "$5" = "" ] || [ "$6" = "" ]); then
+	echo "------------------------------------------------------------------------"
 	echo "ERROR: Missing arguments"
-	echo "Usage: wl_init_services.sh wl_install_path (ex: /bea/weblogicTest) wl_domain_name (ex: domainTest) init_node_manager (START|STOP|RESTART|NONE) init_admin_server (START|STOP|RESTART|NONE)"
-	echo "--------------------------------------"
+	echo "Usage: wl_init_services.sh wl_install_path (ex: /bea/weblogicTest) "
+	echo "			 domain_name (ex: domainTest) node_manager_port (ex: 5556) admin_server (ex: 7001)"
+	echo "			 node_manager_mode (START|STOP|RESTART|NONE) admin_server_mode (START|STOP|RESTART|NONE)"
+	echo "-----------------------------------------------------------------------"
 	exit
 fi
 
 WL_INSTALL_PATH=${1}
 WL_DOMAIN_NAME=${2}
-INIT_NODE_MANAGER=$(echo ${3} | tr '[:lower:]' '[:upper:]')
-INIT_ADMIN_SERVER=$(echo ${4} | tr '[:lower:]' '[:upper:]')
+NODE_MANAGER_PORT=${3}
+NODE_MANAGER_MODE=$(echo ${4} | tr '[:lower:]' '[:upper:]')
+ADMIN_SERVER_PORT=${5}
+ADMIN_SERVER_MODE=$(echo ${6} | tr '[:lower:]' '[:upper:]')
 PID_ADMIN_SERVER=$(ps -ef | grep "weblogic.Name=AdminServer -Djava.security.policy=${WL_INSTALL_PATH}" | grep -v grep|awk '{print $2}')
 PID_NODE_MANAGER=$(ps -ef  | grep "weblogic.NodeManager" | grep -v grep | awk '{print $2}')
 PID_MANAGED_SERVER=$(ps -ef  | grep "wlserver/server -Dweblogic.management.server" | grep -v grep | awk '{print $2}')
 SLEEP_TIME=3
 OVERALL_STOP_STATUS=true
 OVERALL_START_STATUS=true
-WL_HTTP_STATUS_CODE=$(curl -I http://127.0.0.1:24500/console/login/LoginForm.jsp 2>/dev/null | head -n 1 | cut -d$' ' -f2)
+WL_HTTP_STATUS_CODE=$(curl -I http://127.0.0.1:"$ADMIN_SERVER_PORT"/console/login/LoginForm.jsp 2>/dev/null | head -n 1 | cut -d$' ' -f2)
+NETSTAT_ADMIN_SERVER=$(netstat -ln | grep :"$ADMIN_SERVER_PORT" | grep 'LISTEN')
+NETSTAT_NODE_MANAGER=$(netstat -ln | grep :"$NODE_MANAGER_PORT" | grep 'LISTEN')
 
-function stopNodeManager() {
+stopNodeManager() {
   local time_spent=0
   if ! ([ "${PID_NODE_MANAGER}" = "" ]); then
     echo "---------------------------------------------------------------------"
@@ -49,7 +57,7 @@ function stopNodeManager() {
     if ([ "${PID_NODE_MANAGER}" = "" ]); then
       echo "Successfully stopped Weblogic Node Manager process"
     else
-      kill -9 ${PID_NODE_MANAGER}
+      kill -9 "${PID_NODE_MANAGER}"
       sleep ${SLEEP_TIME}
       if ! ([ "${PID_NODE_MANAGER}" = "" ]); then
         echo "Could not stop Weblogic Node Manager process running with PID ${PID_NODE_MANAGER} manual shutdown is needed!"
@@ -62,7 +70,7 @@ function stopNodeManager() {
   fi
 }
 
-function startNodeManager() {
+startNodeManager() {
   local time_spent=0
   echo "-----------------------------------------------------------------------"
 	echo "Checking state of Weblogic Node Manager process"
@@ -85,12 +93,32 @@ function startNodeManager() {
     echo "Time spent so far to start process: ${time_spent} seconds"
     PID_NODE_MANAGER=$(ps -ef  | grep "weblogic.NodeManager" | grep -v grep | awk '{print $2}')
   done
+
+	while [[ "${NETSTAT_NODE_MANAGER}" = "" ]]; do
+		echo "Wating for Weblogic Node Manager service to be avaliable ..."
+		local netstat_node_manager_5556=$(netstat -ln | grep ':5556' | grep 'LISTEN')
+		local netstat_node_manager_12556=$(netstat -ln | grep ':12556' | grep 'LISTEN')
+
+		if ! ([ "${netstat_node_manager_5556}" = "" ]); then
+			echo "INFO: Weblogic Node Manager seems to be running at port 5556"
+			NETSTAT_NODE_MANAGER=netstat_node_manager_5556
+		elif ! ([ "${netstat_node_manager_12556}" = "" ]); then
+			echo "INFO: Weblogic Node Manager seems to be running at port 12556"
+			NETSTAT_NODE_MANAGER=netstat_node_manager_12556
+		else
+			NETSTAT_NODE_MANAGER=$(netstat -ln | grep :"$NODE_MANAGER_PORT" | grep 'LISTEN')
+		fi
+		sleep ${SLEEP_TIME}
+    time_spent=$(( time_spent + ${SLEEP_TIME} ))
+		echo "Time spent so far to start process: ${time_spent} seconds"
+	done
+
   echo "-----------------------------------------------------------------------"
   echo "Weblogic Node Manager process started successfully with PID ${PID_NODE_MANAGER}"
   echo "-----------------------------------------------------------------------"
 }
 
-function stopManagedServer() {
+stopManagedServer() {
   local time_spent=0
   echo "-----------------------------------------------------------------------"
 	echo "Checking state of Weblogic Managed Server process"
@@ -100,7 +128,7 @@ function stopManagedServer() {
     echo "Weblogic Node Managed Server running with PID ${PID_MANAGED_SERVER}"
     echo "Killing Weblogic Managed Server process ..."
     echo "---------------------------------------------------------------------"
-    kill -9 ${PID_MANAGED_SERVER}
+    kill -9 "${PID_MANAGED_SERVER}"
 
     until [[ "${PID_MANAGED_SERVER}" = "" ]]; do
       echo "Still stopping Weblogic Managed Server process ..."
@@ -122,7 +150,7 @@ function stopManagedServer() {
   fi
 }
 
-function stopAdminServer() {
+stopAdminServer() {
   local time_spent=0
   if ! ([ "${PID_ADMIN_SERVER}" = "" ]); then
     echo "---------------------------------------------------------------------"
@@ -142,7 +170,7 @@ function stopAdminServer() {
     if ([ "${PID_ADMIN_SERVER}" = "" ]); then
       echo "Successfully stopped Weblogic Admin Server process"
     else
-      kill -9 ${PID_ADMIN_SERVER}
+      kill -9 "${PID_ADMIN_SERVER}"
       sleep ${SLEEP_TIME}
       if ! ([ "${PID_ADMIN_SERVER}" = "" ]); then
         echo "Could not stop Weblogic Admin Server process running with PID ${PID_ADMIN_SERVER} manual shutdown is needed!"
@@ -155,7 +183,7 @@ function stopAdminServer() {
   fi
 }
 
-function startAdminServer() {
+startAdminServer() {
   local time_spent=0
   echo "-----------------------------------------------------------------------"
 	echo "Checking state of Weblogic Admin Server process"
@@ -171,20 +199,37 @@ function startAdminServer() {
 
   . /${WL_INSTALL_PATH}/user_projects/domains/${WL_DOMAIN_NAME}/startWebLogic.sh < /dev/null &> /dev/null &
 
-  while ([ "${PID_ADMIN_SERVER}" = "" ] || [ "${WL_HTTP_STATUS_CODE}" -ne 200 ]); do
-    echo "Still starting Weblogic Admin Server process in background ..."
-    sleep ${SLEEP_TIME}
-    time_spent=$(( time_spent + ${SLEEP_TIME} ))
-    echo "Time spent so far to start process: ${time_spent} seconds"
-    PID_ADMIN_SERVER=$(ps -ef | grep "weblogic.Name=AdminServer -Djava.security.policy=${WL_INSTALL_PATH}" | grep -v grep|awk '{print $2}')
-  done
+	if ! ([ "${WL_HTTP_STATUS_CODE}" = "200" ]); then
+		while ([ "${PID_ADMIN_SERVER}" = "" ]); do
+	    echo "Still starting Weblogic Admin Server process in background ..."
+	    sleep ${SLEEP_TIME}
+	    time_spent=$(( time_spent + ${SLEEP_TIME} ))
+	    echo "Time spent so far to start process: ${time_spent} seconds"
+	    PID_ADMIN_SERVER=$(ps -ef | grep "weblogic.Name=AdminServer -Djava.security.policy=${WL_INSTALL_PATH}" | grep -v grep|awk '{print $2}')
+	  done
+	fi
+
+	while [[ "${NETSTAT_ADMIN_SERVER}" = "" ]]; do
+		echo "Waiting for Weblogic Admin Server service to be avaliable ..."
+		local netstat_admin_server_7001=$(netstat -ln | grep ':7001' | grep 'LISTEN')
+
+		if ! ([ "${netstat_admin_server_7001}" = "" ]); then
+			echo "INFO: Weblogic Admin Server seems to be running at port 7001"
+			NETSTAT_ADMIN_SERVER=netstat_admin_server_7001
+		else
+			NETSTAT_ADMIN_SERVER=$(netstat -ln | grep :"$ADMIN_SERVER_PORT" | grep 'LISTEN')
+		fi
+		sleep ${SLEEP_TIME}
+		time_spent=$(( time_spent + ${SLEEP_TIME} ))
+		echo "Time spent so far to start process: ${time_spent} seconds"
+	done
 
   while ! ([ "${WL_HTTP_STATUS_CODE}" = "200" ]); do
     echo "Waiting for Weblogic Admin Server console to be ready ..."
     sleep ${SLEEP_TIME}
     time_spent=$(( time_spent + ${SLEEP_TIME} ))
     echo "Time spent so far to start process: ${time_spent} seconds"
-    WL_HTTP_STATUS_CODE=$(curl -I http://127.0.0.1:24500/console/login/LoginForm.jsp 2>/dev/null | head -n 1 | cut -d$' ' -f2)
+    WL_HTTP_STATUS_CODE=$(curl -I http://127.0.0.1:"$ADMIN_SERVER_PORT"/console/login/LoginForm.jsp 2>/dev/null | head -n 1 | cut -d$' ' -f2)
   done
 
   echo "-----------------------------------------------------------------------"
@@ -192,13 +237,19 @@ function startAdminServer() {
   echo "-----------------------------------------------------------------------"
 }
 
-function init() {
-  if ([ "${INIT_NODE_MANAGER}" = "STOP" ]); then
+init() {
+  if ([ "${NODE_MANAGER_MODE}" = "STOP" ]); then
     stopNodeManager
     stopManagedServer
-  elif ([ "${INIT_NODE_MANAGER}" = "START" ] || [ "${INIT_NODE_MANAGER}" = "RESTART" ]); then
-    startNodeManager
-  elif ([ "${INIT_NODE_MANAGER}" = "NONE" ]); then
+  elif ([ "${NODE_MANAGER_MODE}" = "START" ] || [ "${NODE_MANAGER_MODE}" = "RESTART" ]); then
+		startNodeManager
+	elif ([ "${NODE_MANAGER_MODE}" = "RESTART" ]); then
+		# if is also requested an AdminServer stop is a good idea to stop it first
+  	if ([ "${ADMIN_SERVER_MODE}" = "RESTART" ]); then
+  		stopAdminServer
+  	fi
+		startNodeManager
+  elif ([ "${NODE_MANAGER_MODE}" = "NONE" ]); then
     echo "---------------------------------------------------------------------"
     echo "INFO: No action for Node Manager process"
     echo "---------------------------------------------------------------------"
@@ -209,11 +260,11 @@ function init() {
     exit
   fi
 
-  if ([ "${INIT_ADMIN_SERVER}" = "STOP" ]); then
+  if ([ "${ADMIN_SERVER_MODE}" = "STOP" ]); then
     stopAdminServer
-  elif ([ "${INIT_ADMIN_SERVER}" = "START" ] || [ "${INIT_ADMIN_SERVER}" = "RESTART" ]); then
+  elif ([ "${ADMIN_SERVER_MODE}" = "START" ] || [ "${ADMIN_SERVER_MODE}" = "RESTART" ]); then
     startAdminServer
-  elif ([ "${INIT_ADMIN_SERVER}" = "NONE" ]); then
+  elif ([ "${ADMIN_SERVER_MODE}" = "NONE" ]); then
     echo "---------------------------------------------------------------------"
     echo "INFO: No action for Admin Server process"
     echo "---------------------------------------------------------------------"
@@ -237,7 +288,7 @@ function init() {
   fi
 
   echo "-----------------------------------------------------------------------"
-  echo "INFO: Finished executing script wl_init_services.sh ${1} ${2} ${3} ${4}"
+  echo "INFO: Finished executing script wl_init_services.sh ${1} ${2} ${3} ${4} ${5} ${6}"
   echo "-----------------------------------------------------------------------"
   exit 0
 }
