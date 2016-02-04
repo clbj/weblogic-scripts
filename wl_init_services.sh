@@ -21,7 +21,7 @@ if ([ "$1" = "" ] || [ "$2" = "" ] || [ "$3" = "" ] || [ "$4" = "" ] || [ "$5" =
 fi
 
 SLEEP_TIME=3
-LONG_TIME=240
+LONG_TIME=500
 WL_INSTALL_PATH=${1}
 WL_DOMAIN_NAME=${2}
 NODE_MANAGER_PORT=${3}
@@ -35,6 +35,19 @@ OVERALL_STOP_STATUS=true
 OVERALL_START_STATUS=true
 NETSTAT_ADMIN_SERVER=$(netstat -ln | grep :"$ADMIN_SERVER_PORT" | grep 'LISTEN')
 NETSTAT_NODE_MANAGER=$(netstat -ln | grep :"$NODE_MANAGER_PORT" | grep 'LISTEN')
+
+checkTimeout() {
+	if ([ $1 -gt ${LONG_TIME} ]); then
+		echo "---------------------------------------------------------------------"
+		echo "WARN: The execution is taking too much time to finish."
+		echo "Please check if the parameters are correct or if you are not facing"
+		echo "any hardware or network issues then run the script again."
+		echo "---------------------------------------------------------------------"
+		echo "WARN: The execution has been interrupted!"
+		echo "---------------------------------------------------------------------"
+		exit 1
+	fi
+}
 
 stopNodeManager() {
   local time_spent=0
@@ -52,6 +65,7 @@ stopNodeManager() {
       time_spent=$(( time_spent + ${SLEEP_TIME} ))
       echo "Time spent so far to stop process: ${time_spent} seconds"
       PID_NODE_MANAGER=$(ps -ef  | grep "weblogic.NodeManager" | grep -v grep | awk '{print $2}')
+			checkTimeout $time_spent
     done
 
     if ([ "${PID_NODE_MANAGER}" = "" ]); then
@@ -72,17 +86,17 @@ stopNodeManager() {
 
 startNodeManager() {
   local time_spent=0
-  echo "-----------------------------------------------------------------------"
+  echo "---------------------------------------------------------------------"
 	echo "Checking state of Weblogic Node Manager process"
-	echo "-----------------------------------------------------------------------"
+	echo "---------------------------------------------------------------------"
 
   if ! ([ "${PID_NODE_MANAGER}" = "" ]); then
     stopNodeManager
   fi
 
-  echo "-----------------------------------------------------------------------"
+  echo "---------------------------------------------------------------------"
   echo "Starting Weblogic Node Manager process in background ..."
-  echo "-----------------------------------------------------------------------"
+  echo "---------------------------------------------------------------------"
 
   . /${WL_INSTALL_PATH}/user_projects/domains/${WL_DOMAIN_NAME}/bin/startNodeManager.sh < /dev/null &> /dev/null &
 
@@ -92,6 +106,7 @@ startNodeManager() {
     time_spent=$(( time_spent + ${SLEEP_TIME} ))
     echo "Time spent so far to start process: ${time_spent} seconds"
     PID_NODE_MANAGER=$(ps -ef  | grep "weblogic.NodeManager" | grep -v grep | awk '{print $2}')
+		checkTimeout $time_spent
   done
 
 	while ([ "${NETSTAT_NODE_MANAGER}" = "" ]); do
@@ -111,18 +126,19 @@ startNodeManager() {
 		sleep ${SLEEP_TIME}
     time_spent=$(( time_spent + ${SLEEP_TIME} ))
 		echo "Time spent so far to start process: ${time_spent} seconds"
+		checkTimeout $time_spent
 	done
 
-  echo "-----------------------------------------------------------------------"
+  echo "---------------------------------------------------------------------"
   echo "Weblogic Node Manager process started successfully with PID ${PID_NODE_MANAGER}"
-  echo "-----------------------------------------------------------------------"
+  echo "---------------------------------------------------------------------"
 }
 
 stopManagedServer() {
   local time_spent=0
-  echo "-----------------------------------------------------------------------"
+  echo "---------------------------------------------------------------------"
 	echo "Checking state of Weblogic Managed Server process"
-	echo "-----------------------------------------------------------------------"
+	echo "---------------------------------------------------------------------"
 
   if ! ([ "${PID_MANAGED_SERVER}" = "" ]); then
     echo "Weblogic Node Managed Server running with PID ${PID_MANAGED_SERVER}"
@@ -136,6 +152,7 @@ stopManagedServer() {
       time_spent=$(( time_spent + ${SLEEP_TIME} ))
       echo "Time spent so far to stop process: ${time_spent} seconds"
       PID_MANAGED_SERVER=$(ps -ef  | grep "wlserver/server -Dweblogic.management.server" | grep -v grep | awk '{print $2}')
+			checkTimeout $time_spent
     done
 
     if ([ "${PID_MANAGED_SERVER}" = "" ]); then
@@ -165,6 +182,7 @@ stopAdminServer() {
       time_spent=$(( time_spent + ${SLEEP_TIME} ))
       echo "Time spent so far to stop process: ${time_spent} seconds"
       PID_ADMIN_SERVER=$(ps -ef | grep "weblogic.Name=AdminServer -Djava.security.policy=${WL_INSTALL_PATH}" | grep -v grep|awk '{print $2}')
+			checkTimeout $time_spent
     done
 
     if ([ "${PID_ADMIN_SERVER}" = "" ]); then
@@ -185,17 +203,17 @@ stopAdminServer() {
 
 startAdminServer() {
   local time_spent=0
-  echo "-----------------------------------------------------------------------"
+  echo "---------------------------------------------------------------------"
 	echo "Checking state of Weblogic Admin Server process"
-	echo "-----------------------------------------------------------------------"
+	echo "---------------------------------------------------------------------"
 
   if ! ([ "${PID_ADMIN_SERVER}" = "" ]); then
     stopAdminServer
   fi
 
-  echo "-----------------------------------------------------------------------"
+  echo "---------------------------------------------------------------------"
   echo "Starting Weblogic Admin Server process in background ..."
-  echo "-----------------------------------------------------------------------"
+  echo "---------------------------------------------------------------------"
 
   . /${WL_INSTALL_PATH}/user_projects/domains/${WL_DOMAIN_NAME}/startWebLogic.sh < /dev/null &> /dev/null &
 
@@ -205,6 +223,7 @@ startAdminServer() {
 	  time_spent=$(( time_spent + ${SLEEP_TIME} ))
 	  echo "Time spent so far to start process: ${time_spent} seconds"
 	  PID_ADMIN_SERVER=$(ps -ef | grep "weblogic.Name=AdminServer -Djava.security.policy=${WL_INSTALL_PATH}" | grep -v grep|awk '{print $2}')
+		checkTimeout $time_spent
 	done
 
 	while ([ "${NETSTAT_ADMIN_SERVER}" = "" ]); do
@@ -220,14 +239,15 @@ startAdminServer() {
 		sleep ${SLEEP_TIME}
 		time_spent=$(( time_spent + ${SLEEP_TIME} ))
 		echo "Time spent so far to start process: ${time_spent} seconds"
+		checkTimeout $time_spent
 	done
 
-  echo "-----------------------------------------------------------------------"
+  echo "---------------------------------------------------------------------"
   echo "Weblogic Admin Server process started successfully with PID ${PID_ADMIN_SERVER}"
-  echo "-----------------------------------------------------------------------"
+  echo "---------------------------------------------------------------------"
 }
 
-init() {
+run() {
   if ([ "${NODE_MANAGER_MODE}" = "STOP" ]); then
     stopNodeManager
     stopManagedServer
@@ -283,4 +303,4 @@ init() {
   exit 0
 }
 
-init
+run
