@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # CLBJ - 2016- Shell script to check and kill weblogic processes
-# Dependency: netstat
+# Dependency: netstat, curl
 # https://github.com/clbj/weblogic-scripts
 # $1 weblogic install path
 # $2 domain name
@@ -21,7 +21,7 @@ if ([ "$1" = "" ] || [ "$2" = "" ] || [ "$3" = "" ] || [ "$4" = "" ] || [ "$5" =
 fi
 
 SLEEP_TIME=3
-LONG_TIME=500
+LONG_TIME=600
 WL_INSTALL_PATH=${1}
 WL_DOMAIN_NAME=${2}
 NODE_MANAGER_PORT=${3}
@@ -35,6 +35,7 @@ OVERALL_STOP_STATUS=true
 OVERALL_START_STATUS=true
 NETSTAT_ADMIN_SERVER=$(netstat -ln | grep :"$ADMIN_SERVER_PORT" | grep 'LISTEN')
 NETSTAT_NODE_MANAGER=$(netstat -ln | grep :"$NODE_MANAGER_PORT" | grep 'LISTEN')
+WL_HTTP_STATUS_CODE=$(curl -I http://127.0.0.1:"$ADMIN_SERVER_PORT"/console/login/LoginForm.jsp 2>/dev/null | head -n 1 | cut -d$' ' -f2)
 
 checkTimeout() {
 	if ([ $1 -gt ${LONG_TIME} ]); then
@@ -242,7 +243,16 @@ startAdminServer() {
 		checkTimeout $time_spent
 	done
 
-  echo "---------------------------------------------------------------------"
+	while ! ([ "${WL_HTTP_STATUS_CODE}" = "200" ]); do
+		echo "Waiting for Weblogic Admin Server console to be ready ..."
+ 		sleep ${SLEEP_TIME}
+ 		time_spent=$(( time_spent + ${SLEEP_TIME} ))
+ 		echo "Time spent so far to start process: ${time_spent} seconds"
+ 		WL_HTTP_STATUS_CODE=$(curl -I http://127.0.0.1:"$ADMIN_SERVER_PORT"/console/login/LoginForm.jsp 2>/dev/null | head -n 1 | cut -d$' ' -f2)
+		checkTimeout $time_spent
+ 	done
+
+	echo "---------------------------------------------------------------------"
   echo "Weblogic Admin Server process started successfully with PID ${PID_ADMIN_SERVER}"
   echo "---------------------------------------------------------------------"
 }
